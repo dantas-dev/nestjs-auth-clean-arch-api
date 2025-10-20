@@ -1,0 +1,3 @@
+import { AppError } from './app-error.exception';
+
+export class UnauthorizedException extends AppError {}

@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nestjs_auth_api
+        ports:
+          - 5432:5432
+        options: >-
+            --health-cmd="pg_isready -U postgres"                        
+            --health-interval=5s                     
+            --health-timeout=3s                
+            --health-retries=5 
+
+      redis:                                     
+        image: redis:7-alpine                                                                                                
+        ports:                                                             
+          - 6379:6379                                 
+        options: >-                              
+            --health-cmd="redis-cli ping"
+            --health-interval=5s
+            --health-timeout=3s                                                                                              
+            --health-retries=5
+      
+    env:
+      ENV: test
+      P1_POSTGRES_HOST: localhost                                      
+      P1_POSTGRES_PORT: 5432                       
+      P1_POSTGRES_USER: postgres                                                                             
+      P1_POSTGRES_PASS: postgres
+      P1_POSTGRES_DB: nestjs_auth_api                                                                        
+      JWT_SECRET: ci-test-secret 
+      REDIS_HOST: localhost                                                                                                  
+      REDIS_PORT: 6379 
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      
+      - run: npm ci --legacy-peer-deps
+      - run: npm run lint
+      - run: npm test
+      # - run: npm run migration:up # sincronize ja ta = TRUE
+      - run: npm run test:e2e
+
+  build-and-push:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+        contents: read                                                                                         
+        packages: write
+
+    steps:                                   
+        - uses: actions/checkout@v4
+
+        - uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}                                                                      
+            password: ${{ secrets.GITHUB_TOKEN }}
+                                                                  
+        - uses: docker/build-push-action@v6                              
+          with:                                      
+            context: .                         
+            file: infra/Dockerfile
+            push: true
+            tags: |                                                                                            
+              ghcr.io/${{ github.repository }}:latest
+              ghcr.io/${{ github.repository }}:${{ github.sha }}
